@@ -31,8 +31,33 @@ local DEFAULT_OPTIONS = {
 }
 ------------------------------------------------------------
 
-local smtp   = require("socket.smtp")
 local socket = require("socket")
+local base = _G
+
+local function _protect(co, status, ...)
+  if not status then
+    local msg = ...
+    if base.type(msg) == 'table' then
+      return nil, msg[1]
+    else
+      base.error(msg, 0)
+    end
+  end
+  if coroutine.status(co) == "suspended" then
+    return _protect(co, coroutine.resume(co, coroutine.yield(...)))
+  else
+    return ...
+  end
+end
+
+function socket.protect(f)
+  return function(...)
+    local co = coroutine.create(f)
+    return _protect(co, coroutine.resume(co, ...))
+  end
+end
+
+local smtp   = require("socket.smtp")
 local ltn12  = require("ltn12")
 local mime   = require("mime")
 local string = require("string")
@@ -515,7 +540,7 @@ local function CreateMail(from, to, smtp_server, message, options)
   }
 end
 
-local function sendmail(...)
+local function send(...)
   local msg, err;
   if type((...)) == 'table' and select('#', ...) == 1 then
     local params = ...
@@ -527,4 +552,4 @@ local function sendmail(...)
   return smtp.send(msg)
 end
 
-return sendmail
+return { send = send }
